@@ -457,7 +457,26 @@ document.getElementById('kpis').addEventListener('click',ev=>{
  if(i===3)openDetail('ผู้จัดการส่วนขึ้นไป',mm);
  if(i===4)openDetail('ผู้จัดการส่วนขึ้นไปที่อบรมแล้ว',mm.filter(e=>e.trained_jpo));
 });
-document.getElementById('courses').addEventListener('click',ev=>{const el=ev.target.closest('.course-row');if(el)showCourse(el.querySelector('b').textContent.trim())});
+// Clicking any part of a course chart row opens its own participant list.
+function openCourseChart(name){
+ const selected=scopedT().filter(t=>t['หลักสูตร']===name);
+ const unique=new Map();
+ selected.forEach(t=>{const key=t.BU+'|'+String(t['ชื่อ-นามสกุล']||'').replace(/\s+/g,' ').trim();
+  const prev=unique.get(key);
+  if(!prev){unique.set(key,{...t,'หลักสูตร จป.':name,'วันที่อบรม':t['วันที่อบรมถึง'],trained_jpo:true});}
+  else {prev['วันที่อบรม']+=(prev['วันที่อบรม'].includes(t['วันที่อบรมถึง'])?'':' / '+t['วันที่อบรมถึง']);}
+ });
+ const names=[...unique.values()];
+ openDetail('รายชื่อผู้เข้าอบรม '+name+' • '+(globalBU.value||'ทุก BU'),names);
+ document.getElementById('detailMeta').textContent=`ผู้เข้าอบรม ${fmt(names.length)} คน • ${fmt(selected.length)} รายการอบรม`;
+}
+const graph=document.getElementById('courses');
+graph.addEventListener('click',ev=>{const el=ev.target.closest('.course-row');if(el)openCourseChart(el.querySelector('b').textContent.trim())});
+graph.addEventListener('keydown',ev=>{if((ev.key==='Enter'||ev.key===' ')&&ev.target.closest('.course-row')){ev.preventDefault();openCourseChart(ev.target.closest('.course-row').querySelector('b').textContent.trim());}});
+function makeCourseChartAccessible(){graph.querySelectorAll('.course-row').forEach(row=>{row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-label','ดูรายชื่อผู้เข้าอบรม '+row.querySelector('b').textContent.trim());});}
+const chartObserver=new MutationObserver(makeCourseChartAccessible);
+chartObserver.observe(graph,{childList:true});
+makeCourseChartAccessible();
 document.getElementById('buSummary').addEventListener('click',ev=>{const row=ev.target.closest('tr');if(!row)return;const bu=row.cells[0].textContent.trim();globalBU.value=bu;redrawGlobal();openDetail('ผู้จัดการส่วนขึ้นไป • '+bu,employees.filter(e=>e.BU===bu&&e.manager_up))});
 document.getElementById('buBars').addEventListener('click',ev=>{const row=ev.target.closest('.bu-row');if(!row)return;const bu=row.querySelector('b').textContent.trim();globalBU.value=bu;redrawGlobal();openDetail('ผู้จัดการส่วนขึ้นไป • '+bu,employees.filter(e=>e.BU===bu&&e.manager_up))});
 
