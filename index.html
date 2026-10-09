@@ -207,7 +207,7 @@ trainings.forEach(t=>{t['หลักสูตรเดิม']=t['หลัก�
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const fmt = n => new Intl.NumberFormat('th-TH').format(n);
 const currentKeys = new Set(employees.map(e => e.BU+'|'+e['ชื่อ-นามสกุล']));
-const bus = [...new Set(employees.map(e=>e.BU))].sort();
+const bus = [...new Set([...employees.map(e=>e.BU), 'STP'])].sort();
 
 function fillBU(id, list=bus){
   const el=document.getElementById(id);
@@ -246,16 +246,17 @@ function renderDashboard(){
 
   const rows=[];
   bus.forEach(b=>{
+    if(b==='STP'){ rows.push({bu:b,all:null,total:null,trained:null,missing:null,pct:null});return; }
     const all=employees.filter(e=>e.BU===b), mm=all.filter(e=>e.manager_up), tr=mm.filter(e=>e.trained_jpo);
     rows.push({bu:b,all:all.length,total:mm.length,trained:tr.length,missing:mm.length-tr.length,pct:mm.length?tr.length/mm.length*100:0});
   });
-  const maxMgr=Math.max(...rows.map(r=>r.total),1);
+  const maxMgr=Math.max(...rows.map(r=>r.total||0),1);
   document.getElementById('buBars').innerHTML=rows.map(r=>`
-    <div class="bu-row"><div><b>${r.bu}</b><div class="small">${r.trained}/${r.total} คน</div></div>
-    <div class="bar"><span style="width:${r.pct}%"></span></div><div class="right"><b>${r.pct.toFixed(1)}%</b></div></div>`).join('');
+    <div class="bu-row"><div><b>${r.bu}</b><div class="small">${r.pct===null?'มีข้อมูลอบรม 1 คน (ไม่มีฐานพนักงาน)':r.trained+'/'+r.total+' คน'}</div></div>
+    <div class="bar"><span style="width:${r.pct||0}%"></span></div><div class="right"><b>${r.pct===null?'N/A':r.pct.toFixed(1)+'%'}</b></div></div>`).join('');
   document.getElementById('buSummary').innerHTML=rows.map(r=>`
-    <tr><td><b>${r.bu}</b></td><td>${fmt(r.all)}</td><td>${fmt(r.total)}</td><td><span class="badge ok">${r.trained}</span></td>
-    <td><span class="badge no">${r.missing}</span></td><td><b>${r.pct.toFixed(1)}%</b></td></tr>`).join('');
+    <tr><td><b>${r.bu}</b></td><td>${r.all===null?'—':fmt(r.all)}</td><td>${r.total===null?'—':fmt(r.total)}</td><td><span class="badge ok">${r.trained===null?'—':r.trained}</span></td>
+    <td><span class="badge no">${r.missing===null?'—':r.missing}</span></td><td><b>${r.pct===null?'N/A':r.pct.toFixed(1)+'%'}</b></td></tr>`).join('');
 }
 
 function renderManagers(){
@@ -352,9 +353,12 @@ function redrawGlobal(){
  renderManagers();renderTraining();renderEmployees();updateCourse();
  // BU summary and dashboard metrics should reflect selected BU as well
  const subset=bu?employees.filter(e=>e.BU===bu):employees;
+ if(bu==='STP')document.getElementById('kpis').innerHTML=[
+ ['ฐานพนักงาน STP','ยังไม่ได้รับ'],['BU ที่เลือก','STP'],['พบประวัติอบรม จป.',new Set(trainings.filter(t=>t.BU==='STP').map(t=>t['ชื่อ-นามสกุล'])).size],['ผู้จัดการส่วนขึ้นไป','N/A'],['Coverage','N/A']
+ ].map(x=>`<div class="card"><div class="kpi-label">${esc(x[0])}</div><div class="kpi">${esc(x[1])}</div></div>`).join('');
  const mm=subset.filter(e=>e.manager_up), tr=mm.filter(e=>e.trained_jpo);
  const kpi=document.getElementById('kpis');
- kpi.innerHTML=[['พนักงานในขอบเขต',subset.length],['BU ที่เลือก',bu||'ทุก BU'],['มีประวัติ จป. ในไฟล์ 1',subset.filter(e=>e.trained_jpo).length],['ผู้จัดการส่วนขึ้นไป',mm.length],['ผู้จัดการที่อบรมแล้ว',tr.length+' / '+mm.length]].map(x=>`<div class="card"><div class="kpi-label">${esc(x[0])}</div><div class="kpi">${esc(x[1])}</div></div>`).join('');
+ if(bu!=='STP')kpi.innerHTML=[['พนักงานในขอบเขต',subset.length],['BU ที่เลือก',bu||'ทุก BU'],['มีประวัติ จป. ในไฟล์ 1',subset.filter(e=>e.trained_jpo).length],['ผู้จัดการส่วนขึ้นไป',mm.length],['ผู้จัดการที่อบรมแล้ว',tr.length+' / '+mm.length]].map(x=>`<div class="card"><div class="kpi-label">${esc(x[0])}</div><div class="kpi">${esc(x[1])}</div></div>`).join('');
  document.querySelectorAll('#buSummary tr').forEach(row=>{row.style.display=(!bu||row.cells[0].textContent.trim()===bu)?'':'none'});
  document.querySelectorAll('#buBars .bu-row').forEach(row=>{row.style.display=(!bu||row.querySelector('b')?.textContent.trim()===bu)?'':'none'});
  const courses={};trainings.filter(t=>!bu||t.BU===bu).forEach(t=>{courses[t['หลักสูตร']]=(courses[t['หลักสูตร']]||0)+1});
@@ -387,21 +391,22 @@ function renderCourseMatrix(){
   const rows=scopeBus.map(bu=>{
    const all=employees.filter(e=>e.BU===bu);
    const managers=management.filter(e=>e.BU===bu);
+   if(bu==='STP') return {bu,total:null,manager:null,yes:matrixUniqueTrainings(matrixTrainingByCourse(course,bu)).length,no:null,pct:null};
    const trainedKeys=new Set(matrixTrainingByCourse(course,bu).map(matrixPersonKey));
    const yes=managers.filter(e=>trainedKeys.has(matrixPersonKey(e)));
    const no=managers.filter(e=>!trainedKeys.has(matrixPersonKey(e)));
    const pct=managers.length?yes.length/managers.length*100:0;
    return {bu,total:all.length,manager:managers.length,yes:yes.length,no:no.length,pct};
   });
-  const totals=rows.reduce((a,r)=>{for(const k of ['total','manager','yes','no'])a[k]+=r[k];return a},{total:0,manager:0,yes:0,no:0});
+  const totals=rows.reduce((a,r)=>{for(const k of ['total','manager','yes','no'])a[k]+=(r[k]||0);return a},{total:0,manager:0,yes:0,no:0});
   const totalPct=totals.manager?totals.yes/totals.manager*100:0;
   const makeRow=(r,isTotal=false)=>`<tr class="${isTotal?'matrix-total':''}">
    <td><button class="matrix-click" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="all">${esc(r.bu)}</button></td>
-   <td><button class="matrix-click" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="all">${fmt(r.total)}</button></td>
-   <td><button class="matrix-click" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="managers">${fmt(r.manager)}</button></td>
+   <td>${r.total===null?'—':`<button class="matrix-click" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="all">${fmt(r.total)}</button>`}</td>
+   <td>${r.manager===null?'—':`<button class="matrix-click" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="managers">${fmt(r.manager)}</button>`}</td>
    <td><button class="matrix-click green" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="yes">${fmt(r.yes)}</button></td>
-   <td><button class="matrix-click red" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="no">${fmt(r.no)}</button></td>
-   <td><button class="matrix-click" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="yes">${r.pct.toFixed(1)}%</button></td></tr>`;
+   <td>${r.no===null?'—':`<button class="matrix-click red" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="no">${fmt(r.no)}</button>`}</td>
+   <td>${r.pct===null?'N/A':`<button class="matrix-click" data-course="${idx}" data-bu="${esc(r.bu)}" data-kind="yes">${r.pct.toFixed(1)}%</button>`}</td></tr>`;
   const tot={...totals,bu:'ทุก BU',pct:totalPct};
   const unique=matrixUniqueTrainings(matrixTrainingByCourse(course,scope));
   return `<div class="matrix-block"><div class="matrix-title"><span>${esc(course)}</span><span class="small">ผู้มีประวัติ ${fmt(unique.length)} คน • คลิกดูรายชื่อ</span></div>
@@ -417,6 +422,11 @@ document.getElementById('courseMatrix').addEventListener('click',ev=>{
  })[Number(btn.dataset.course)];
  const bu=btn.dataset.bu==='ทุก BU'?'':btn.dataset.bu;
  const kind=btn.dataset.kind;
+ if(bu==='STP'){
+   const ts=matrixUniqueTrainings(matrixTrainingByCourse(course,'STP'));
+   openDetail(course+' • STP • '+(kind==='yes'?'ผู้เข้าอบรม':'ข้อมูลอบรมที่มี'),ts.map(t=>({...t,'ตำแหน่ง':t['ตำแหน่งเดิม'],'หน่วยงานสังกัด':t['หน่วยงานเดิม'],'ระดับตำแหน่ง':t['ระดับเดิม'],'หลักสูตร จป.':t['หลักสูตร'],'วันที่อบรม':t['วันที่อบรมถึง'],trained_jpo:true})));
+   return;
+ }
  const ee=employees.filter(e=>(!bu||e.BU===bu));
  const mm=ee.filter(e=>e.manager_up);
  const ts=matrixTrainingByCourse(course,bu);
@@ -477,8 +487,8 @@ function makeCourseChartAccessible(){graph.querySelectorAll('.course-row').forEa
 const chartObserver=new MutationObserver(makeCourseChartAccessible);
 chartObserver.observe(graph,{childList:true});
 makeCourseChartAccessible();
-document.getElementById('buSummary').addEventListener('click',ev=>{const row=ev.target.closest('tr');if(!row)return;const bu=row.cells[0].textContent.trim();globalBU.value=bu;redrawGlobal();openDetail('ผู้จัดการส่วนขึ้นไป • '+bu,employees.filter(e=>e.BU===bu&&e.manager_up))});
-document.getElementById('buBars').addEventListener('click',ev=>{const row=ev.target.closest('.bu-row');if(!row)return;const bu=row.querySelector('b').textContent.trim();globalBU.value=bu;redrawGlobal();openDetail('ผู้จัดการส่วนขึ้นไป • '+bu,employees.filter(e=>e.BU===bu&&e.manager_up))});
+document.getElementById('buSummary').addEventListener('click',ev=>{const row=ev.target.closest('tr');if(!row)return;const bu=row.cells[0].textContent.trim();globalBU.value=bu;redrawGlobal();openDetail(bu==='STP'?'ประวัติอบรม STP':'ผู้จัดการส่วนขึ้นไป • '+bu,bu==='STP'?trainings.filter(t=>t.BU==='STP'):employees.filter(e=>e.BU===bu&&e.manager_up))});
+document.getElementById('buBars').addEventListener('click',ev=>{const row=ev.target.closest('.bu-row');if(!row)return;const bu=row.querySelector('b').textContent.trim();globalBU.value=bu;redrawGlobal();openDetail(bu==='STP'?'ประวัติอบรม STP':'ผู้จัดการส่วนขึ้นไป • '+bu,bu==='STP'?trainings.filter(t=>t.BU==='STP'):employees.filter(e=>e.BU===bu&&e.manager_up))});
 
 for(const id of ['managerRows','trainingRows','employeeRows','courseRows']){
  document.getElementById(id).addEventListener('click',event=>{
@@ -499,5 +509,5 @@ function addRowOpen(id,getData,title){document.getElementById(id).addEventListen
 
 redrawGlobal();
 </script>
-<div id="detailShade"><div id="detailBox" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><button id="detailClose" aria-label="ปิด">×</button><h2 id="detailTitle"></h2><div class="small" id="detailMeta"></div><div class="table-wrap" style="margin-top:14px"><table id="detailTable"><thead><tr><th>BU</th><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th>หน่วยงาน</th><th>ระดับ</th><th>หลักสูตร จป. / วันที่</th><th>สถานะ</th></tr></thead><tbody id="detailRows"></tbody></table></div></div></div></body>
+<div id="detailShade"><div id="detailBox" role="dialog" aria-modal="true" aria-labelledby="detailTitle"><button id="detailClose" aria-label="ปิด">×</button><h2 id="detailTitle"></h2><div class="small" id="detailMeta"></div><div class="table-wrap" style="margin-top:14px"><table id="detailTable"><thead><tr><th>BU</th><th>รหัส</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th>หน่วยงาน</th><th>ระดับ</th><th>หลักสูตร จป. / วันที่</th><th>สถานะ</th></tr></thead><tbody id="detailRows"></tbody></table></div></div></div><script>document.querySelectorAll('.note').forEach(n=>n.remove());</script></body>
 </html>
